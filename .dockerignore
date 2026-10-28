@@ -1,0 +1,13 @@
+node_modules
+.env
+.git
+data/
+*.log
+bullet
+em
+start.bat
+.gitignore
+.env.example
+.discloudignore
+discloud.config
+senzavault_bot_upload.zip
