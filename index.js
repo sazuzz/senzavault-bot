@@ -139,4 +139,7 @@ client.once('clientReady', () => {
     console.log(`Commands loaded: ${client.commands.size}`)
 })
 
+process.on('unhandledRejection', err => console.error('[CRASH] Unhandled rejection:', err))
+process.on('uncaughtException', err => console.error('[CRASH] Uncaught exception:', err))
+
 client.login(process.env.TOKEN)
