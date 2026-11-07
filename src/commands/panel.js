@@ -66,60 +66,65 @@ module.exports = {
         const channel = interaction.options.getChannel('channel') ?? interaction.channel
         const g = interaction.guild
         const em = (name) => e(g, name)
-
-        const embed = new EmbedBuilder()
-            .setColor(0x7c3aed)
-            .setAuthor({
-                name: `${em('senzalogo') ? 'SENZA VAULT' : '🔮 SENZA VAULT'} — #1 Software Provider`,
-                iconURL: g.iconURL({ dynamic: true, size: 64 }) ?? undefined
-            })
-            .setTitle(`${em('senzalogo')} Senza Vault — Purchases`)
-            .setDescription(
-                `**${em('_balistic_info_') || em('info')} How to order**\n` +
-                `> ${em('info')} Click **Read TOS** and review our terms first.\n` +
-                `> ${em('support')} Click **Purchase** and select your product.\n` +
-                `> ${em('staffteam')} Fill out the short form — ticket opens instantly.\n\n` +
-                `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                `**${em('coin')} Products**\n` +
-                `> 🎮 **FiveM Cheat** — ESP • Aimbot • Radar • Misc\n` +
-                `> ⚔️ **HvH Script** — Resolver • Anti-Aim • Desync\n` +
-                `> 🛡️ **HWID Spoofer** — Kernel-level permanent bypass\n` +
-                `> ✨ **Custom** — Describe your needs, we build it\n\n` +
-                `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                `**${em('paypal')} Accepted payments**\n` +
-                `> ${em('paypal')} PayPal  •  ${em('ltc')} Crypto  •  ${em('visa')} Stripe  •  ${em('paysafecard')} Paysafecard\n\n` +
-                `> ⚠️ All sales are **final**. No refunds.`
-            )
-            .setImage(process.env.PANEL_BANNER_URL ?? null)
-            .setFooter({ text: `Senza Vault • ${g.memberCount.toLocaleString()} members • Click Purchase below` })
-            .setTimestamp()
-
-        const ge = (name, fallback) => {
+        const logo = em('senzalogo')
+        const gef = (name, fallback) => {
             const found = g.emojis.cache.find(ex => ex.name === name)
                 ?? interaction.client.emojis.cache.find(ex => ex.name === name)
             return found ? { id: found.id, name: found.name, animated: found.animated } : { name: fallback }
         }
 
+        const embed = new EmbedBuilder()
+            .setColor(0x7c3aed)
+            .setAuthor({
+                name: 'SENZA VAULT  •  discord.gg/senzavault',
+                iconURL: g.iconURL({ dynamic: true, size: 64 }) ?? undefined,
+                url: 'https://discord.gg/senzavault'
+            })
+            .setTitle(`${logo || '🔮'} Welcome to Senza Vault`)
+            .setDescription(
+                `> **Premium cheats & tools built for real players.**\n` +
+                `> Private tickets • Fast delivery • Secure payments\n\n` +
+                `**${em('info') || '📋'} How To Order**\n` +
+                `- ${em('info') || '📋'} Read **TOS** first — all sales are final.\n` +
+                `- ${em('coin') || '🛒'} Hit **Purchase** and pick your product.\n` +
+                `- ${em('staffteam') || '👥'} Fill the quick form — private ticket opens instantly.\n` +
+                `- ${em('verified') || '✅'} Staff claims your ticket and delivers.\n\n` +
+                `**${em('coin') || '💰'} Products**\n` +
+                `- ${em('controller') || '🎮'} **FiveM Cheat** — ESP • Aimbot • Radar • Misc\n` +
+                `- ${em('sword') || '⚔️'} **HvH Script** — Resolver • Anti-Aim • Desync\n` +
+                `- ${em('shield') || '🛡️'} **HWID Spoofer** — Kernel bypass • Permanent\n` +
+                `- ${em('star') || '✨'} **Custom Order** — Describe it, we build it\n\n` +
+                `**${em('paypal') || '💳'} Payment Methods**\n` +
+                `- ${em('paypal') || '🅿️'} PayPal  •  ${em('ltc') || '🪙'} Crypto (BTC/ETH/LTC)  •  ${em('visa') || '💳'} Stripe  •  ${em('paysafecard') || '🎫'} Paysafecard\n\n` +
+                `⚠️ All sales are **final**. No refunds after delivery.`
+            )
+            .setImage(process.env.PANEL_BANNER_URL ?? null)
+            .setFooter({
+                text: `Senza Vault  •  ${g.memberCount.toLocaleString()} members  •  discord.gg/senzavault`,
+                iconURL: g.iconURL({ dynamic: true, size: 32 }) ?? undefined
+            })
+            .setTimestamp()
+
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('purchase_ticket')
                 .setLabel('Purchase')
-                .setEmoji(ge('coin', '🛒'))
+                .setEmoji(gef('coin', '🛒'))
                 .setStyle(ButtonStyle.Success),
             new ButtonBuilder()
                 .setCustomId('read_tos')
                 .setLabel('Read TOS')
-                .setEmoji(ge('info', '📋'))
+                .setEmoji(gef('info', '📋'))
                 .setStyle(ButtonStyle.Secondary),
             new ButtonBuilder()
                 .setLabel('discord.gg/senzavault')
-                .setEmoji(ge('senzalogo', '🔗'))
+                .setEmoji(gef('senzalogo', '🔗'))
                 .setStyle(ButtonStyle.Link)
                 .setURL('https://discord.gg/senzavault')
         )
 
         await channel.send({ embeds: [embed], components: [row] })
-        await interaction.reply({ content: `${em('senzalogo')} Panel sent to ${channel}`, ephemeral: true })
+        await interaction.reply({ content: `${logo || '🔮'} Panel sent to ${channel}`, ephemeral: true })
     },
 
     async handleButton(interaction) {

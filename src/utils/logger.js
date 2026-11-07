@@ -14,6 +14,7 @@ function readLogs() {
 }
 
 function writeLogs(logs) {
+    fs.mkdirSync(path.dirname(LOGS_PATH), { recursive: true })
     fs.writeFileSync(LOGS_PATH, JSON.stringify(logs, null, 2), 'utf8')
 }
 

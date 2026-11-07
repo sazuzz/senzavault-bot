@@ -12,6 +12,7 @@ function readGW() {
     try { return JSON.parse(fs.readFileSync(GW_PATH, "utf8")) } catch { return {} }
 }
 function saveGW(data) {
+    fs.mkdirSync(path.dirname(GW_PATH), { recursive: true })
     fs.writeFileSync(GW_PATH, JSON.stringify(data, null, 2), "utf8")
 }
 
@@ -94,7 +95,10 @@ const activeTimers = new Map()
 
 function scheduleEnd(client, gwId, delay) {
     if (activeTimers.has(gwId)) clearTimeout(activeTimers.get(gwId))
-    const timer = setTimeout(() => endGiveaway(client, gwId), delay)
+    const timer = setTimeout(
+        () => endGiveaway(client, gwId).catch(err => console.error(`[GW] endGiveaway error (${gwId}):`, err)),
+        delay
+    )
     activeTimers.set(gwId, timer)
 }
 
@@ -125,7 +129,9 @@ async function endGiveaway(client, gwId) {
         } else {
             await channel.send({ content: `${e(guild, "info")} No valid entries for **${gw.prize}** — no winner selected.` })
         }
-    } catch {}
+    } catch (err) {
+        console.error(`[GW] Failed to announce giveaway end (${gwId}):`, err)
+    }
 }
 
 function ge(guild, name, fallback) {
@@ -369,37 +375,37 @@ module.exports = {
         const em = (name) => e(g, name)
 
         if (interaction.customId === "gw_entries") {
-            if (gw.entries.length === 0) return interaction.reply({ content: `${em("info")} No entries yet.`, ephemeral: true })
+            await interaction.deferReply({ ephemeral: true })
+            if (gw.entries.length === 0) return interaction.editReply(`${em("info")} No entries yet.`)
             const sample = gw.entries.slice(0, 20).map(id => `<@${id}>`).join(", ")
             const more = gw.entries.length > 20 ? ` +${gw.entries.length - 20} more` : ""
-            return interaction.reply({
-                content: `${em("userslogo")} **${gw.entries.length} entr${gw.entries.length === 1 ? "y" : "ies"}:** ${sample}${more}`,
-                ephemeral: true
-            })
+            return interaction.editReply(
+                `${em("userslogo")} **${gw.entries.length} entr${gw.entries.length === 1 ? "y" : "ies"}:** ${sample}${more}`
+            )
         }
 
         if (interaction.customId === "gw_enter") {
-            if (gw.ended) return interaction.reply({ content: `${em("info")} This giveaway has ended.`, ephemeral: true })
+            await interaction.deferUpdate()
+
+            if (gw.ended) return interaction.followUp({ content: `${em("info")} This giveaway has ended.`, ephemeral: true })
 
             if (gw.requiredRoleId) {
                 const member = interaction.member ?? await interaction.guild.members.fetch(interaction.user.id).catch(() => null)
                 if (!member?.roles?.cache?.has(gw.requiredRoleId)) {
-                    return interaction.reply({ content: `${em("info")} You need <@&${gw.requiredRoleId}> to enter this giveaway.`, ephemeral: true })
+                    return interaction.followUp({ content: `${em("info")} You need <@&${gw.requiredRoleId}> to enter this giveaway.`, ephemeral: true })
                 }
             }
 
             const userId = interaction.user.id
             if (gw.entries.includes(userId)) {
-                // Toggle out
                 gw.entries = gw.entries.filter(id => id !== userId)
                 if (gw.entryWeights) delete gw.entryWeights[userId]
                 saveGW(gws)
-                await interaction.message.edit({ embeds: [buildGiveawayEmbed(g, gw)], components: [buildEnterRow(g)] })
-                return interaction.reply({ content: `${em("info")} Removed your entry from **${gw.prize}**.`, ephemeral: true })
+                await interaction.message.edit({ embeds: [buildGiveawayEmbed(g, gw)], components: [buildEnterRow(g)] }).catch(() => {})
+                return interaction.followUp({ content: `${em("info")} Removed your entry from **${gw.prize}**.`, ephemeral: true })
             }
 
-            // Calculate invite weight if bonus enabled
-            let slots = 2  // x1.0 base (2 slots = base unit)
+            let slots = 2
             let inviteCount = 0
             if (gw.inviteBonus) {
                 try {
@@ -407,7 +413,7 @@ module.exports = {
                     inviteCount = invites
                         .filter(inv => inv.inviter?.id === userId)
                         .reduce((sum, inv) => sum + (inv.uses ?? 0), 0)
-                    slots = 2 + inviteCount  // +1 slot per invite = +0.5x
+                    slots = 2 + inviteCount
                 } catch {}
                 if (!gw.entryWeights) gw.entryWeights = {}
                 gw.entryWeights[userId] = slots
@@ -415,13 +421,13 @@ module.exports = {
 
             gw.entries.push(userId)
             saveGW(gws)
-            await interaction.message.edit({ embeds: [buildGiveawayEmbed(g, gw)], components: [buildEnterRow(g)] })
+            await interaction.message.edit({ embeds: [buildGiveawayEmbed(g, gw)], components: [buildEnterRow(g)] }).catch(() => {})
 
             const multiplier = (slots / 2).toFixed(1)
             const bonusLine = gw.inviteBonus
                 ? `\n${em("star")} Multiplier: **x${multiplier}** (${inviteCount} invite${inviteCount !== 1 ? "s" : ""})`
                 : ''
-            return interaction.reply({
+            return interaction.followUp({
                 content: `${em("star")} You entered **${gw.prize}**! Good luck! ${em("boost")}${bonusLine}\nClick again to withdraw.`,
                 ephemeral: true
             })
@@ -431,16 +437,23 @@ module.exports = {
     restoreTimers(client) {
         const gws = readGW()
         let restored = 0
+        let expired = 0
         for (const [id, gw] of Object.entries(gws)) {
             if (gw.ended) continue
             const remaining = gw.endsAt - Date.now()
             if (remaining <= 0) {
-                endGiveaway(client, id)
+                // Small delay so Discord guild/channel cache is populated after login
+                setTimeout(
+                    () => endGiveaway(client, id).catch(err => console.error(`[GW] restoreTimers endGiveaway error (${id}):`, err)),
+                    3000 + expired * 1000
+                )
+                expired++
             } else {
                 scheduleEnd(client, id, remaining)
                 restored++
             }
         }
         if (restored > 0) console.log(`[Giveaway] Restored ${restored} active giveaway timer(s)`)
+        if (expired > 0) console.log(`[Giveaway] Ending ${expired} expired giveaway(s) after delay`)
     }
 }

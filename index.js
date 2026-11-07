@@ -30,11 +30,16 @@ const eventsPath = path.join(__dirname, 'src', 'events')
 const eventFiles = fs.readdirSync(eventsPath).filter(f => f.endsWith('.js'))
 for (const file of eventFiles) {
     const event = require(path.join(eventsPath, file))
-    if (event.once) {
-        client.once(event.name, (...args) => event.execute(...args))
-    } else {
-        client.on(event.name, (...args) => event.execute(...args))
+    const wrapped = (...args) => {
+        try {
+            const result = event.execute(...args)
+            if (result && typeof result.catch === 'function') result.catch(err => console.error(`[EVENT:${event.name}]`, err))
+        } catch (err) {
+            console.error(`[EVENT:${event.name}]`, err)
+        }
     }
+    if (event.once) client.once(event.name, wrapped)
+    else client.on(event.name, wrapped)
 }
 
 const OWNER_ID = process.env.OWNER_ID || '1539317326489329735'
@@ -119,6 +124,16 @@ client.on('interactionCreate', async interaction => {
             return
         }
 
+        if (
+            interaction.customId.startsWith('access_lang_') ||
+            interaction.customId === 'access_buy' ||
+            interaction.customId === 'access_claim_free'
+        ) {
+            const accessCmd = client.commands.get('access')
+            if (accessCmd?.handleButton) return safeCall(() => accessCmd.handleButton(interaction), interaction)
+            return
+        }
+
         if (interaction.customId === 'drop_claim') {
             const dropCmd = client.commands.get('drop')
             if (dropCmd?.handleButton) return safeCall(() => dropCmd.handleButton(interaction), interaction)
@@ -141,5 +156,13 @@ client.once('clientReady', () => {
 
 process.on('unhandledRejection', err => console.error('[CRASH] Unhandled rejection:', err))
 process.on('uncaughtException', err => console.error('[CRASH] Uncaught exception:', err))
+
+client.on('error', err => console.error('[WS] Discord client error:', err))
+client.on('warn', msg => console.warn('[WS] Warning:', msg))
+client.on('shardDisconnect', (event, shardId) => {
+    console.warn(`[WS] Shard ${shardId} disconnected (code ${event.code}), reconnecting...`)
+})
+client.on('shardReconnecting', shardId => console.log(`[WS] Shard ${shardId} reconnecting...`))
+client.on('shardResume', shardId => console.log(`[WS] Shard ${shardId} resumed`))
 
 client.login(process.env.TOKEN)

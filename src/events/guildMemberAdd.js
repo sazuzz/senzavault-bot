@@ -1,9 +1,17 @@
 const { EmbedBuilder, AttachmentBuilder } = require('discord.js')
-const { createCanvas, loadImage } = require('canvas')
 const { log } = require('../utils/logger')
 const { e } = require('../utils/emojis')
 const fs = require('fs')
 const path = require('path')
+
+let createCanvas, loadImage
+try {
+    const cv = require('canvas')
+    createCanvas = cv.createCanvas
+    loadImage    = cv.loadImage
+} catch {
+    console.warn('[Welcome] canvas not available — banner disabled')
+}
 
 const configPath = path.join(__dirname, '..', '..', 'data', 'config.json')
 function getConfig() {
@@ -14,6 +22,7 @@ function getConfig() {
 const WELCOME_CHANNEL_ID = process.env.WELCOME_CHANNEL_ID
 
 async function buildWelcomeBanner(member) {
+    if (!createCanvas || !loadImage) return null
     const W = 1000, H = 300
     const canvas = createCanvas(W, H)
     const ctx = canvas.getContext('2d')
@@ -226,8 +235,7 @@ module.exports = {
             : months >= 1 ? `${months} month${months > 1 ? 's' : ''}`
             : `${days} day${days !== 1 ? 's' : ''}`
 
-        const buffer = await buildWelcomeBanner(member)
-        const attachment = new AttachmentBuilder(buffer, { name: 'welcome.png' })
+        const buffer = await buildWelcomeBanner(member).catch(() => null)
 
         const g = member.guild
         const em = (name) => e(g, name)
@@ -240,10 +248,16 @@ module.exports = {
                 { name: `${em('star')} Member Count`,     value: `\`#${memberCount.toLocaleString()}\``,   inline: true },
                 { name: `${em('info')} Account Age`,      value: timeAgo,                                   inline: true }
             )
-            .setImage('attachment://welcome.png')
             .setFooter({ text: 'Senza Vault  •  #1 Software Provider' })
             .setTimestamp()
 
-        await channel.send({ content: `${user}`, embeds: [embed], files: [attachment] })
+        if (buffer) {
+            const attachment = new AttachmentBuilder(buffer, { name: 'welcome.png' })
+            embed.setImage('attachment://welcome.png')
+            await channel.send({ content: `${user}`, embeds: [embed], files: [attachment] })
+        } else {
+            embed.setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
+            await channel.send({ content: `${user}`, embeds: [embed] })
+        }
     }
 }
