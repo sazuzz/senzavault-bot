@@ -1,5 +1,5 @@
-FROM node:20-bullseye-slim
-RUN apt-get update && apt-get install -y \
+FROM node:20-bullseye
+RUN apt-get update --fix-missing && apt-get install -y --fix-missing --no-install-recommends \
     libcairo2-dev \
     libpango1.0-dev \
     libjpeg-dev \
