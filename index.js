@@ -169,3 +169,6 @@ client.on('shardReconnecting', shardId => console.log(`[WS] Shard ${shardId} rec
 client.on('shardResume', shardId => console.log(`[WS] Shard ${shardId} resumed`))
 
 client.login(process.env.TOKEN)
+
+const http = require('http')
+http.createServer((req, res) => res.end('ok')).listen(process.env.PORT || 3000)
