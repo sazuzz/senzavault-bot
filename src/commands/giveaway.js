@@ -149,6 +149,12 @@ function buildEnterRow(guild, disabled = false) {
             .setStyle(ButtonStyle.Primary)
             .setDisabled(disabled),
         new ButtonBuilder()
+            .setCustomId("gw_leave")
+            .setLabel("Leave")
+            .setEmoji(ge(guild, "close", "🚪"))
+            .setStyle(ButtonStyle.Danger)
+            .setDisabled(disabled),
+        new ButtonBuilder()
             .setCustomId("gw_entries")
             .setLabel("View Entries")
             .setEmoji(ge(guild, "userslogo", "👥"))
@@ -398,11 +404,7 @@ module.exports = {
 
             const userId = interaction.user.id
             if (gw.entries.includes(userId)) {
-                gw.entries = gw.entries.filter(id => id !== userId)
-                if (gw.entryWeights) delete gw.entryWeights[userId]
-                saveGW(gws)
-                await interaction.message.edit({ embeds: [buildGiveawayEmbed(g, gw)], components: [buildEnterRow(g)] }).catch(() => {})
-                return interaction.followUp({ content: `${em("info")} Removed your entry from **${gw.prize}**.`, ephemeral: true })
+                return interaction.followUp({ content: `${em("info")} Already entered **${gw.prize}**. Use the **Leave** button to withdraw.`, ephemeral: true })
             }
 
             let slots = 2
@@ -428,9 +430,26 @@ module.exports = {
                 ? `\n${em("star")} Multiplier: **x${multiplier}** (${inviteCount} invite${inviteCount !== 1 ? "s" : ""})`
                 : ''
             return interaction.followUp({
-                content: `${em("star")} You entered **${gw.prize}**! Good luck! ${em("boost")}${bonusLine}\nClick again to withdraw.`,
+                content: `${em("star")} You entered **${gw.prize}**! Good luck! ${em("boost")}${bonusLine}`,
                 ephemeral: true
             })
+        }
+
+        if (interaction.customId === "gw_leave") {
+            await interaction.deferUpdate()
+
+            if (gw.ended) return interaction.followUp({ content: `${em("info")} This giveaway has ended.`, ephemeral: true })
+
+            const userId = interaction.user.id
+            if (!gw.entries.includes(userId)) {
+                return interaction.followUp({ content: `${em("info")} You haven't entered **${gw.prize}**.`, ephemeral: true })
+            }
+
+            gw.entries = gw.entries.filter(id => id !== userId)
+            if (gw.entryWeights) delete gw.entryWeights[userId]
+            saveGW(gws)
+            await interaction.message.edit({ embeds: [buildGiveawayEmbed(g, gw)], components: [buildEnterRow(g)] }).catch(() => {})
+            return interaction.followUp({ content: `${em("info")} Removed your entry from **${gw.prize}**.`, ephemeral: true })
         }
     },
 

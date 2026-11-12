@@ -346,9 +346,9 @@ module.exports = {
             }
         }
 
-        // Check existing ticket
-        const existing = guild.channels.cache.find(c => c.topic && c.topic.includes(`user:${user.id}`))
-        if (existing) return interaction.editReply(`${em("info")} You already have an open ticket: ${existing}`)
+        // Check existing tickets — max 2 per user
+        const userTickets = guild.channels.cache.filter(c => c.topic && c.topic.includes(`user:${user.id}`))
+        if (userTickets.size >= 2) return interaction.editReply(`${em("info")} You already have **2 open tickets**. Close one before opening another: ${userTickets.map(c => c.toString()).join(", ")}`)
 
         const config = getConfig()
         const nextNum = (config.ticketCounter || 0) + 1
@@ -356,8 +356,9 @@ module.exports = {
         config.ticketCounter = nextNum
         saveConfig(config)
 
-        const ticketNum = String(nextNum).padStart(4, "0")
-        const channelName = `${ticketType.channelPrefix}-${ticketNum}`
+        const rawUsername = interaction.user.username.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 15) || 'user'
+        const categorySlug = type.replace('ticket_', '')
+        const channelName = `${rawUsername}-${categorySlug}`
 
         const permissionOverwrites = [
             { id: guild.id, type: 0, deny: ["ViewChannel"] },
