@@ -94,13 +94,16 @@ client.on('interactionCreate', async interaction => {
     }
 
     if (interaction.isButton()) {
-        if (interaction.customId === 'gw_enter' || interaction.customId === 'gw_entries') {
+        if (['gw_enter', 'gw_leave', 'gw_entries', 'gw_reroll_btn'].includes(interaction.customId)) {
             const gwCmd = client.commands.get('giveaway')
             if (gwCmd?.handleButton) return safeCall(() => gwCmd.handleButton(interaction), interaction)
             return
         }
 
-        if (['claim_ticket', 'close_ticket', 'delete_ticket'].includes(interaction.customId)) {
+        if (
+            ['claim_ticket', 'close_ticket', 'delete_ticket'].includes(interaction.customId) ||
+            interaction.customId.startsWith('ticket_priority_')
+        ) {
             const tsCmd = client.commands.get('ticketsetup')
             if (tsCmd?.handleButton) return safeCall(() => tsCmd.handleButton(interaction), interaction)
             return

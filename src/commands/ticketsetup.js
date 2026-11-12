@@ -332,7 +332,6 @@ module.exports = {
         const guild = interaction.guild
         const user = interaction.user
         const OWNER_ID = process.env.OWNER_ID || "1539317326489329735"
-        const botId = guild.members.me.id
         const em = (name) => e(guild, name)
 
         // Cooldown check (skip for staff)
@@ -350,103 +349,169 @@ module.exports = {
         const userTickets = guild.channels.cache.filter(c => c.topic && c.topic.includes(`user:${user.id}`))
         if (userTickets.size >= 2) return interaction.editReply(`${em("info")} You already have **2 open tickets**. Close one before opening another: ${userTickets.map(c => c.toString()).join(", ")}`)
 
-        const config = getConfig()
-        const nextNum = (config.ticketCounter || 0) + 1
-        // Save counter immediately — prevents race condition duplicates on concurrent opens
-        config.ticketCounter = nextNum
-        saveConfig(config)
-
-        const rawUsername = interaction.user.username.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 15) || 'user'
-        const categorySlug = type.replace('ticket_', '')
-        const channelName = `${rawUsername}-${categorySlug}`
-
-        const permissionOverwrites = [
-            { id: guild.id, type: 0, deny: ["ViewChannel"] },
-            { id: user.id, type: 1, allow: ["ViewChannel", "SendMessages", "ReadMessageHistory", "AttachFiles"] },
-            { id: OWNER_ID, type: 1, allow: ["ViewChannel", "SendMessages", "ReadMessageHistory", "ManageMessages", "AttachFiles"] },
-            { id: botId, type: 1, allow: ["ViewChannel", "SendMessages", "ReadMessageHistory", "ManageMessages", "ManageChannels", "AttachFiles"] }
-        ]
-
-        if (staffRoleId) {
-            permissionOverwrites.push({ id: staffRoleId, type: 0, allow: ["ViewChannel", "SendMessages", "ReadMessageHistory", "ManageMessages", "AttachFiles"] })
+        // Step 2: ask for priority
+        const gef = (name, fallback) => {
+            const found = guild.emojis.cache.find(x => x.name === name) ?? interaction.client.emojis.cache.find(x => x.name === name)
+            return found ? { id: found.id, name: found.name, animated: found.animated } : { name: fallback }
         }
 
-        let channel
-        try {
-            channel = await guild.channels.create({
-                name: channelName,
-                type: 0,
-                parent: process.env.TICKET_CATEGORY_ID || null,
-                topic: `${ticketType.label} | user:${user.id} | opened:<t:${Math.floor(Date.now() / 1000)}:f>`,
-                permissionOverwrites
-            })
-            config.ticketCounter = nextNum
-            saveConfig(config)
+        const priorityRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`ticket_priority_low_${type}`)
+                .setLabel("Low")
+                .setEmoji(gef("info", "🔵"))
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId(`ticket_priority_medium_${type}`)
+                .setLabel("Medium")
+                .setEmoji(gef("boost", "🟡"))
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId(`ticket_priority_high_${type}`)
+                .setLabel("High / Urgent")
+                .setEmoji(gef("bugsu", "🔴"))
+                .setStyle(ButtonStyle.Danger)
+        )
 
-            const tickets = getTickets()
-            tickets[channel.id] = {
-                number: ticketNum,
-                type,
-                typeLabel: ticketType.label,
-                userId: user.id,
-                username: user.username,
-                openedAt: Date.now(),
-                claimedBy: null,
-                claimedAt: null,
-                priority: "medium"
-            }
-            saveTickets(tickets)
-            ticketCooldowns.set(user.id, Date.now())
-        } catch (err) {
-            console.error("[TicketSetup Error]", err)
-            return interaction.editReply(
-                "Could not create ticket channel.\n" +
-                "**Fix:** Move the bot role above all others in Server Settings → Roles. Ensure **Manage Channels** is granted."
-            )
-        }
-
-        const openedTs = Math.floor(Date.now() / 1000)
-        const introData = ticketType.intro(em, user, ticketNum)
-
-        const ticketEmbed = new EmbedBuilder()
-            .setColor(ticketType.color)
-            .setAuthor({
-                name: `SENZA VAULT — ${ticketType.label}`,
-                iconURL: user.displayAvatarURL({ dynamic: true })
-            })
-            .setTitle(introData.title)
-            .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
-            .setDescription(introData.description)
-            .addFields(
-                { name: `${em("userslogo")} User`, value: `${user}\n\`${user.id}\``, inline: true },
-                { name: `${em("info")} Category`, value: `\`${ticketType.label}\``, inline: true },
-                { name: `${em("boost")} Opened`, value: `<t:${openedTs}:R>`, inline: true }
-            )
-            .setFooter({ text: "Senza Vault  •  Claim or Close below" })
-            .setTimestamp()
-
-        const pings = [`<@${OWNER_ID}>`]
-        if (staffRoleId) pings.push(`<@&${staffRoleId}>`)
-
-        await channel.send({
-            content: `${pings.join(" ")} — new **${ticketType.label}** from ${user}`,
-            embeds: [ticketEmbed],
-            components: [buildActionRow(false, null, guild)]
+        return interaction.editReply({
+            embeds: [new EmbedBuilder()
+                .setColor(ticketType.color)
+                .setAuthor({ name: "SENZA VAULT — Ticket System", iconURL: guild.iconURL({ dynamic: true }) ?? undefined })
+                .setTitle(`${em("boost")} Set Priority — ${ticketType.label}`)
+                .setDescription(
+                    `You're opening a **${ticketType.label}** ticket.\n\n` +
+                    `> 🔵 **Low** — General question, non-urgent\n` +
+                    `> 🟡 **Medium** — Needs attention soon\n` +
+                    `> 🔴 **High / Urgent** — Critical, affects your access\n\n` +
+                    `Pick a priority to continue:`
+                )
+                .setFooter({ text: "Senza Vault  •  Select priority below" })],
+            components: [priorityRow]
         })
-
-        log("ticket_open", {
-            executorId: user.id,
-            executorUsername: user.username,
-            targetId: user.id,
-            targetUsername: user.username,
-            extra: `[${ticketType.label}] ticket #${ticketNum} channel:${channel.id}`
-        })
-
-        return interaction.editReply(`${em("boost")} Ticket opened: ${channel} — **${ticketType.label} #${ticketNum}**`)
     },
 
     async handleButton(interaction) {
         const { customId } = interaction
+
+        // ----- PRIORITY SELECTION → CREATE TICKET -----
+        if (customId.startsWith("ticket_priority_")) {
+            await interaction.deferUpdate()
+
+            const withoutPrefix = customId.replace("ticket_priority_", "")
+            const firstUnderscore = withoutPrefix.indexOf("_")
+            const priority = withoutPrefix.substring(0, firstUnderscore)
+            const type = withoutPrefix.substring(firstUnderscore + 1)
+            const ticketType = TICKET_TYPES[type]
+            if (!ticketType) return interaction.editReply({ content: "Unknown ticket type.", embeds: [], components: [] })
+
+            const guild = interaction.guild
+            const user = interaction.user
+            const OWNER_ID = process.env.OWNER_ID || "1539317326489329735"
+            const botId = guild.members.me.id
+            const em = (name) => e(guild, name)
+            const staffRoleId = process.env.STAFF_ROLE_ID
+
+            const config = getConfig()
+            const nextNum = (config.ticketCounter || 0) + 1
+            config.ticketCounter = nextNum
+            saveConfig(config)
+
+            const ticketNum = String(nextNum).padStart(4, "0")
+            const rawUsername = user.username.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 15) || 'user'
+            const categorySlug = type.replace('ticket_', '')
+            const channelName = `${rawUsername}-${categorySlug}`
+
+            const permissionOverwrites = [
+                { id: guild.id, type: 0, deny: ["ViewChannel"] },
+                { id: user.id, type: 1, allow: ["ViewChannel", "SendMessages", "ReadMessageHistory", "AttachFiles"] },
+                { id: OWNER_ID, type: 1, allow: ["ViewChannel", "SendMessages", "ReadMessageHistory", "ManageMessages", "AttachFiles"] },
+                { id: botId, type: 1, allow: ["ViewChannel", "SendMessages", "ReadMessageHistory", "ManageMessages", "ManageChannels", "AttachFiles"] }
+            ]
+            if (staffRoleId) {
+                permissionOverwrites.push({ id: staffRoleId, type: 0, allow: ["ViewChannel", "SendMessages", "ReadMessageHistory", "ManageMessages", "AttachFiles"] })
+            }
+
+            let channel
+            try {
+                channel = await guild.channels.create({
+                    name: channelName,
+                    type: 0,
+                    parent: process.env.TICKET_CATEGORY_ID || null,
+                    topic: `${ticketType.label} | user:${user.id} | opened:<t:${Math.floor(Date.now() / 1000)}:f> | priority:${priority}`,
+                    permissionOverwrites
+                })
+
+                const tickets = getTickets()
+                tickets[channel.id] = {
+                    number: ticketNum,
+                    type,
+                    typeLabel: ticketType.label,
+                    userId: user.id,
+                    username: user.username,
+                    openedAt: Date.now(),
+                    claimedBy: null,
+                    claimedAt: null,
+                    priority
+                }
+                saveTickets(tickets)
+                ticketCooldowns.set(user.id, Date.now())
+            } catch (err) {
+                console.error("[TicketSetup Error]", err)
+                return interaction.editReply({
+                    content: "Could not create ticket channel.\n**Fix:** Move the bot role above all others in Server Settings → Roles. Ensure **Manage Channels** is granted.",
+                    embeds: [],
+                    components: []
+                })
+            }
+
+            const openedTs = Math.floor(Date.now() / 1000)
+            const introData = ticketType.intro(em, user, ticketNum)
+            const priorityColors = { low: 0x3a86ff, medium: 0xffd166, high: 0xef476f }
+            const priorityLabels = { low: "🔵 Low", medium: "🟡 Medium", high: "🔴 High / Urgent" }
+
+            const ticketEmbed = new EmbedBuilder()
+                .setColor(ticketType.color)
+                .setAuthor({
+                    name: `SENZA VAULT — ${ticketType.label}`,
+                    iconURL: user.displayAvatarURL({ dynamic: true })
+                })
+                .setTitle(introData.title)
+                .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
+                .setDescription(introData.description)
+                .addFields(
+                    { name: `${em("userslogo")} User`, value: `${user}\n\`${user.id}\``, inline: true },
+                    { name: `${em("info")} Category`, value: `\`${ticketType.label}\``, inline: true },
+                    { name: `${em("boost")} Priority`, value: priorityLabels[priority] ?? priority, inline: true },
+                    { name: `🕐 Opened`, value: `<t:${openedTs}:R>`, inline: true }
+                )
+                .setFooter({ text: "Senza Vault  •  Claim or Close below" })
+                .setTimestamp()
+
+            const pings = [`<@${OWNER_ID}>`]
+            if (staffRoleId) pings.push(`<@&${staffRoleId}>`)
+
+            await channel.send({
+                content: `${pings.join(" ")} — new **${ticketType.label}** | ${priorityLabels[priority] ?? priority} | from ${user}`,
+                embeds: [ticketEmbed],
+                components: [buildActionRow(false, null, guild)]
+            })
+
+            log("ticket_open", {
+                executorId: user.id,
+                executorUsername: user.username,
+                targetId: user.id,
+                targetUsername: user.username,
+                extra: `[${ticketType.label}] ticket #${ticketNum} priority:${priority} channel:${channel.id}`
+            })
+
+            return interaction.editReply({
+                embeds: [new EmbedBuilder()
+                    .setColor(priorityColors[priority] ?? ticketType.color)
+                    .setDescription(`${em("boost")} Ticket opened: ${channel} — **${ticketType.label} #${ticketNum}** | ${priorityLabels[priority] ?? priority}`)],
+                components: []
+            })
+        }
+
         if (!["claim_ticket", "close_ticket", "delete_ticket"].includes(customId)) return
 
         const guild = interaction.guild

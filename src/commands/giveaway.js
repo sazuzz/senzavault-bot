@@ -54,39 +54,57 @@ function buildGiveawayEmbed(guild, gw) {
     const em = (name) => e(guild, name)
     const endsTs = Math.floor(gw.endsAt / 1000)
     const entriesCount = gw.entries.length
+    const isPaused = !!gw.pausedAt
 
     const roleStr = gw.requiredRoleId ? `\n> ${em("staffteam") || "🎖️"} **Required Role:** <@&${gw.requiredRoleId}>` : ""
 
+    let description
+    if (gw.ended) {
+        description =
+            `${em("coin") || "🎊"} **Giveaway ended!**\n\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+            (gw.winnerIds?.length
+                ? `${em("boost") || "🏆"} **Winner${gw.winnerIds.length > 1 ? "s" : ""}:**\n> ${gw.winnerIds.map(id => `<@${id}>`).join(", ")}`
+                : `${em("info") || "ℹ️"} No valid entries — no winner selected.`)
+    } else if (isPaused) {
+        const remaining = gw.remainingMs ?? (gw.endsAt - Date.now())
+        description =
+            `⏸️ **Giveaway is paused!**\n\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+            `> ⏳ **Remaining when paused:** \`${formatDuration(Math.max(0, remaining))}\`\n` +
+            `> ${em("info") || "🏅"} **Winners:** \`${gw.winnersCount}\`\n` +
+            `> ${em("userslogo") || "👥"} **Entries:** \`${entriesCount}\`\n` +
+            `> ${em("staffteam") || "👤"} **Host:** <@${gw.hostId}>` +
+            roleStr
+    } else {
+        description =
+            `${em("support") || "🎯"} Click **Enter** below to join the giveaway!\n\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+            `> ${em("boost") || "⏰"} **Ends:** <t:${endsTs}:R>\n` +
+            `> ${em("info") || "📅"} **Date:** <t:${endsTs}:f>\n` +
+            `> ${em("info") || "🏅"} **Winners:** \`${gw.winnersCount}\`\n` +
+            `> ${em("userslogo") || "👥"} **Entries:** \`${entriesCount}\`\n` +
+            `> ${em("staffteam") || "👤"} **Host:** <@${gw.hostId}>` +
+            roleStr +
+            (gw.inviteBonus
+                ? `\n> ${em("star") || "⭐"} **Bonus:** Invite multiplier active\n> \`x1.0\` base  ·  \`+0.5x\` per server invite`
+                : '')
+    }
+
     return new EmbedBuilder()
-        .setColor(gw.ended ? 0x5b21b6 : 0x7c3aed)
+        .setColor(gw.ended ? 0x5b21b6 : isPaused ? 0x87909c : 0x7c3aed)
         .setAuthor({
             name: `SENZA VAULT — GIVEAWAY`,
             iconURL: guild.iconURL({ dynamic: true }) ?? undefined
         })
         .setTitle(`${em("star") || "⭐"} ${gw.prize}`)
-        .setDescription(
-            gw.ended
-                ? `${em("coin") || "🎊"} **Giveaway ended!**\n\n` +
-                  `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                  (gw.winnerIds?.length
-                      ? `${em("boost") || "🏆"} **Winner${gw.winnerIds.length > 1 ? "s" : ""}:**\n> ${gw.winnerIds.map(id => `<@${id}>`).join(", ")}`
-                      : `${em("info") || "ℹ️"} No valid entries — no winner selected.`)
-                : `${em("support") || "🎯"} Click **Enter** below to join the giveaway!\n\n` +
-                  `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                  `> ${em("boost") || "⏰"} **Ends:** <t:${endsTs}:R>\n` +
-                  `> ${em("info") || "📅"} **Date:** <t:${endsTs}:f>\n` +
-                  `> ${em("info") || "🏅"} **Winners:** \`${gw.winnersCount}\`\n` +
-                  `> ${em("userslogo") || "👥"} **Entries:** \`${entriesCount}\`\n` +
-                  `> ${em("staffteam") || "👤"} **Host:** <@${gw.hostId}>` +
-                  roleStr +
-                  (gw.inviteBonus
-                      ? `\n> ${em("star") || "⭐"} **Bonus:** Invite multiplier active\n> \`x1.0\` base  ·  \`+0.5x\` per server invite`
-                      : '')
-        )
+        .setDescription(description)
         .setFooter({
             text: gw.ended
                 ? `Giveaway ended  •  ${entriesCount} total entries`
-                : `Senza Vault  •  ${entriesCount} ${entriesCount === 1 ? "entry" : "entries"}  •  React to enter`
+                : isPaused
+                    ? `Paused  •  ${entriesCount} ${entriesCount === 1 ? "entry" : "entries"}`
+                    : `Senza Vault  •  ${entriesCount} ${entriesCount === 1 ? "entry" : "entries"}  •  Click to enter`
         })
         .setTimestamp()
 }
@@ -120,14 +138,41 @@ async function endGiveaway(client, gwId) {
         const guild = channel.guild
         await msg.edit({ embeds: [buildGiveawayEmbed(guild, gw)], components: [buildEndedRow(guild)] })
 
+        const em = (name) => e(guild, name)
         if (winners.length > 0) {
-            const em = (name) => e(guild, name)
             const winnerMentions = winners.map(id => `<@${id}>`).join(", ")
-            await channel.send({
-                content: `${em("star")} Congrats ${winnerMentions}! You won **${gw.prize}**! ${em("senzalogo")}`
-            })
+            const winEmbed = new EmbedBuilder()
+                .setColor(0xffd700)
+                .setTitle(`${em("star") || "🎉"} Giveaway Ended!`)
+                .setDescription(
+                    `**${gw.prize}**\n\n` +
+                    `${em("boost") || "🏆"} **Winner${winners.length > 1 ? "s" : ""}:** ${winnerMentions}\n\n` +
+                    `${em("userslogo") || "👥"} **Total entries:** \`${gw.entries.length}\`\n` +
+                    `${em("staffteam") || "👤"} **Hosted by:** <@${gw.hostId}>`
+                )
+                .setTimestamp()
+            await channel.send({ content: `🎊 Congrats ${winnerMentions}!`, embeds: [winEmbed] })
+
+            // DM each winner
+            for (const winnerId of winners) {
+                try {
+                    const member = await guild.members.fetch(winnerId).catch(() => null)
+                    if (member) {
+                        const dmEmbed = new EmbedBuilder()
+                            .setColor(0xffd700)
+                            .setTitle(`${em("star") || "🎉"} You won a giveaway!`)
+                            .setDescription(
+                                `You won **${gw.prize}** in **${guild.name}**!\n\n` +
+                                `Check <#${gw.channelId}> to claim your prize.`
+                            )
+                            .setThumbnail(guild.iconURL({ dynamic: true }) ?? null)
+                            .setTimestamp()
+                        await member.send({ embeds: [dmEmbed] }).catch(() => {})
+                    }
+                } catch {}
+            }
         } else {
-            await channel.send({ content: `${e(guild, "info")} No valid entries for **${gw.prize}** — no winner selected.` })
+            await channel.send({ content: `${em("info")} No valid entries for **${gw.prize}** — no winner selected.` })
         }
     } catch (err) {
         console.error(`[GW] Failed to announce giveaway end (${gwId}):`, err)
@@ -171,6 +216,11 @@ function buildEndedRow(guild) {
             .setEmoji(ge(guild, "coin", "🎊"))
             .setStyle(ButtonStyle.Secondary)
             .setDisabled(true),
+        new ButtonBuilder()
+            .setCustomId("gw_reroll_btn")
+            .setLabel("Reroll")
+            .setEmoji(ge(guild, "boost", "🔄"))
+            .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
             .setCustomId("gw_entries")
             .setLabel("View Entries")
@@ -237,6 +287,40 @@ module.exports = {
                 .setDescription("Cancel and delete a giveaway")
                 .addStringOption(opt =>
                     opt.setName("message_id").setDescription("Message ID of the giveaway").setRequired(true)
+                )
+        )
+        .addSubcommand(sub =>
+            sub.setName("pause")
+                .setDescription("Pause a running giveaway (freezes the timer)")
+                .addStringOption(opt =>
+                    opt.setName("message_id").setDescription("Message ID of the giveaway").setRequired(true)
+                )
+        )
+        .addSubcommand(sub =>
+            sub.setName("resume")
+                .setDescription("Resume a paused giveaway")
+                .addStringOption(opt =>
+                    opt.setName("message_id").setDescription("Message ID of the giveaway").setRequired(true)
+                )
+        )
+        .addSubcommand(sub =>
+            sub.setName("addentry")
+                .setDescription("Manually add a user to a giveaway")
+                .addStringOption(opt =>
+                    opt.setName("message_id").setDescription("Message ID of the giveaway").setRequired(true)
+                )
+                .addUserOption(opt =>
+                    opt.setName("user").setDescription("User to add").setRequired(true)
+                )
+        )
+        .addSubcommand(sub =>
+            sub.setName("removeentry")
+                .setDescription("Manually remove a user from a giveaway")
+                .addStringOption(opt =>
+                    opt.setName("message_id").setDescription("Message ID of the giveaway").setRequired(true)
+                )
+                .addUserOption(opt =>
+                    opt.setName("user").setDescription("User to remove").setRequired(true)
                 )
         )
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
@@ -369,6 +453,108 @@ module.exports = {
             saveGW(gws)
             return interaction.editReply(`${em("admin")} Giveaway cancelled and deleted.`)
         }
+
+        if (sub === "pause") {
+            const msgId = interaction.options.getString("message_id")
+            const gws = readGW()
+            const gw = gws[msgId]
+            if (!gw) return interaction.reply({ content: "Giveaway not found.", ephemeral: true })
+            if (gw.ended) return interaction.reply({ content: "Giveaway already ended.", ephemeral: true })
+            if (gw.pausedAt) return interaction.reply({ content: "Giveaway already paused.", ephemeral: true })
+            await interaction.deferReply({ ephemeral: true })
+
+            if (activeTimers.has(msgId)) {
+                clearTimeout(activeTimers.get(msgId))
+                activeTimers.delete(msgId)
+            }
+
+            gw.pausedAt = Date.now()
+            gw.remainingMs = gw.endsAt - Date.now()
+            saveGW(gws)
+
+            try {
+                const channel = await interaction.client.channels.fetch(gw.channelId)
+                const msg = await channel.messages.fetch(msgId)
+                await msg.edit({ embeds: [buildGiveawayEmbed(g, gw)], components: [buildEnterRow(g)] }).catch(() => {})
+            } catch {}
+
+            return interaction.editReply(`${em("info")} Giveaway **${gw.prize}** paused. \`${Math.ceil((gw.remainingMs ?? 0) / 60000)}m\` remaining.`)
+        }
+
+        if (sub === "resume") {
+            const msgId = interaction.options.getString("message_id")
+            const gws = readGW()
+            const gw = gws[msgId]
+            if (!gw) return interaction.reply({ content: "Giveaway not found.", ephemeral: true })
+            if (gw.ended) return interaction.reply({ content: "Giveaway already ended.", ephemeral: true })
+            if (!gw.pausedAt) return interaction.reply({ content: "Giveaway is not paused.", ephemeral: true })
+            await interaction.deferReply({ ephemeral: true })
+
+            const remaining = gw.remainingMs ?? 60000
+            gw.endsAt = Date.now() + remaining
+            delete gw.pausedAt
+            delete gw.remainingMs
+            saveGW(gws)
+
+            scheduleEnd(interaction.client, msgId, remaining)
+
+            try {
+                const channel = await interaction.client.channels.fetch(gw.channelId)
+                const msg = await channel.messages.fetch(msgId)
+                await msg.edit({ embeds: [buildGiveawayEmbed(g, gw)], components: [buildEnterRow(g)] }).catch(() => {})
+            } catch {}
+
+            return interaction.editReply(`${em("star")} Giveaway **${gw.prize}** resumed. Ends <t:${Math.floor(gw.endsAt / 1000)}:R>.`)
+        }
+
+        if (sub === "addentry") {
+            const msgId = interaction.options.getString("message_id")
+            const target = interaction.options.getUser("user")
+            const gws = readGW()
+            const gw = gws[msgId]
+            if (!gw) return interaction.reply({ content: "Giveaway not found.", ephemeral: true })
+            if (gw.ended) return interaction.reply({ content: "Giveaway already ended.", ephemeral: true })
+            await interaction.deferReply({ ephemeral: true })
+
+            if (gw.entries.includes(target.id)) {
+                return interaction.editReply(`${em("info")} ${target} is already in the giveaway.`)
+            }
+            gw.entries.push(target.id)
+            saveGW(gws)
+
+            try {
+                const channel = await interaction.client.channels.fetch(gw.channelId)
+                const msg = await channel.messages.fetch(msgId)
+                await msg.edit({ embeds: [buildGiveawayEmbed(g, gw)], components: [buildEnterRow(g)] }).catch(() => {})
+            } catch {}
+
+            return interaction.editReply(`${em("star")} Added ${target} to **${gw.prize}**. Total entries: \`${gw.entries.length}\``)
+        }
+
+        if (sub === "removeentry") {
+            const msgId = interaction.options.getString("message_id")
+            const target = interaction.options.getUser("user")
+            const gws = readGW()
+            const gw = gws[msgId]
+            if (!gw) return interaction.reply({ content: "Giveaway not found.", ephemeral: true })
+            if (gw.ended) return interaction.reply({ content: "Giveaway already ended.", ephemeral: true })
+            await interaction.deferReply({ ephemeral: true })
+
+            if (!gw.entries.includes(target.id)) {
+                return interaction.editReply(`${em("info")} ${target} is not in the giveaway.`)
+            }
+            gw.entries = gw.entries.filter(id => id !== target.id)
+            if (gw.entryWeights) delete gw.entryWeights[target.id]
+            saveGW(gws)
+
+            try {
+                const channel = await interaction.client.channels.fetch(gw.channelId)
+                const msg = await channel.messages.fetch(msgId)
+                await msg.edit({ embeds: [buildGiveawayEmbed(g, gw)], components: [buildEnterRow(g)] }).catch(() => {})
+            } catch {}
+
+            return interaction.editReply(`${em("info")} Removed ${target} from **${gw.prize}**. Total entries: \`${gw.entries.length}\``)
+        }
     },
 
     async handleButton(interaction) {
@@ -450,6 +636,28 @@ module.exports = {
             saveGW(gws)
             await interaction.message.edit({ embeds: [buildGiveawayEmbed(g, gw)], components: [buildEnterRow(g)] }).catch(() => {})
             return interaction.followUp({ content: `${em("info")} Removed your entry from **${gw.prize}**.`, ephemeral: true })
+        }
+
+        if (interaction.customId === "gw_reroll_btn") {
+            await interaction.deferReply({ ephemeral: true })
+
+            if (!gw.ended) return interaction.editReply(`${em("info")} End the giveaway first before rerolling.`)
+
+            const winners = pickWinners(gw.entries, gw.winnersCount, gw.entryWeights)
+            gw.winnerIds = winners
+            saveGW(gws)
+
+            try {
+                await interaction.message.edit({ embeds: [buildGiveawayEmbed(g, gw)], components: [buildEndedRow(g)] }).catch(() => {})
+                if (winners.length > 0) {
+                    const winnerMentions = winners.map(id => `<@${id}>`).join(", ")
+                    await interaction.channel.send({
+                        content: `${em("boost")} Reroll! New winner${winners.length > 1 ? "s" : ""}: ${winnerMentions}! Congrats for **${gw.prize}**! ${em("senzalogo")}`
+                    })
+                }
+            } catch {}
+
+            return interaction.editReply(`${em("star")} Rerolled ${gw.winnersCount} winner(s).`)
         }
     },
 
